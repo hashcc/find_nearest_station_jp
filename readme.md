@@ -36,6 +36,8 @@ function loadXML(){
   $filename = "S12-12.xml";
 ```
 
+なお、駅名を途中でひらがなに直す処理をしているので、無駄にmecabに依存しています。よろしくお願い致します。
+
 # ライセンス
 - [MITライセンス](http://opensource.org/licenses/MIT)
 - [国土数値情報](http://nlftp.mlit.go.jp/ksj/other/yakkan.html)は利用約款上はオープンライセンスを志向しているように思えますが、明記されていなかったので同梱しませんでした（同梱しなくてもAPI自体は動くので・・）
