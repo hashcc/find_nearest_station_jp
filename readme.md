@@ -3,13 +3,15 @@
 駅データは国土数値情報 駅別乗降客数を基にして、これを扱いやすいようにPHPシリアライズデータとして再整形しています。
 
 国土数値情報 駅別乗降客数データ（S12-12.xml）
+
 http://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-S12.html
 
 # 使い方
 
-## 最寄り駅表示
+## 最寄り駅表示（index.php?mode=near）
 
-緯度経度を指定して、最寄り駅名を表示します（index.php?mode=near）
+緯度経度を指定して、最寄り駅名を表示します
+
   - mode - "near"を指定
   - x - 緯度を指定 (WGS84)
   - y - 経度を指定 (WGS84)
@@ -19,6 +21,8 @@ http://www.railmaps.jp/api/stations/?mode=near&x=35.658611&y=139.745556 （東�
 ## 駅データ一覧表示（index.php?mode=load）
 
 駅データを一覧表示します
+
+
 http://www.railmaps.jp/api/stations/?mode=load （試験公開API/外部から利用しないでください）
 
 ## データ再整形（index.php?mode=build）
