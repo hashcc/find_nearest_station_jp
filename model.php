@@ -1,12 +1,14 @@
 <?php
 
+set_time_limit(0);
+
 class TrainDataIO{
 
-// データ設定コントローラ
+// データ設定
 function buildData(){
   $this->loadXML();
   $this->setData();
-  $this->setGeo();
+  $this->postProcess();
   $this->write();
 }
 
@@ -14,62 +16,38 @@ function buildData(){
 // XMLデータをSimpleXMLで読み込み
 function loadXML(){
   $filename = "S12-12.xml";
-  $this->xml = simplexml_load_file($filename);
-  $this->xml->registerXPathNamespace("gml", "http://www.opengis.net/gml/3.2");
-  $this->xml->registerXPathNamespace("ksj", "http://nlftp.mlit.go.jp/ksj/schemas/ksj-app");
-  $this->xml->registerXPathNamespace("xlink", "http://www.w3.org/1999/xlink");
-  $this->xml->registerXPathNamespace("xsi", "http://www.w3.org/2001/XMLSchema-instance");
-
-  $this->elements = array("snm", "aco", "rnm", "crd", "crc", "cdp", "cen", "rmk", "p11");
-  $this->elements_after = array("name", "company", "line", "railGroup", "companyGroup", "duplication", "existence", "remarks", "passengers");
+  $file = file_get_contents($filename);
+  // reduce namespace
+  $file = str_replace("ksj:", "", $file);
+  $file = str_replace("gml:", "", $file);
+  $this->xml = simplexml_load_string($file);
 }
 
 // データ設定
 function setData(){
-
-  $root = "/ksj:Dataset/ksj:TheNumberofTheStationPassengersGettingonandoff";
-
-  // 各アイテム毎＆1駅毎に処理
-  foreach ($this->elements as $element){
-    $id = 1;
-    $this->elements = array("snm", "aco", "rnm", "crd", "crc", "cdp", "cen", "rmk", "p11");
-    $this->elements_after = array("name", "company", "line", "railGroup", "companyGroup", "duplication", "existence", "remarks", "passengers");
-    
-    // 属性ごとに値を挿入
-    foreach ($this->xml->xpath($root."/ksj:".$element) as $value){
-      // 要らない奴はスルー
-      if ($element == "crd" || $element == "crc" || $element == "cdp" || $element == "cen" || $element == "rmk" || $element == "p11") break;
-      // 駅名はひらがなデータも持っておく
-      if ($element == "snm") $this->stations[$id]["Yomi"] = $this->kanji2kana($value);
-      // 項目名を置換
-      $attr = str_replace($this->elements, $this->elements_after, $element);
-      // 駅名・データ設定
-      $this->stations[$id]["id"] = $id;
-      $this->stations[$id][$attr] = (string) $value;
-      $id++;
-    }
+  foreach ($this->xml->TheNumberofTheStationPassengersGettingonandoff as $station){
+    $name = (string) $station->snm;
+    $id = str_replace("sp", "", (string) $station["id"]);
+    $this->stations[$name]["name"]["ja"] = $name;
+    $this->stations[$name]["name"]["ja_hrgn"] = $this->kanji2kana($name);
+    $this->stations[$name]["name"]["en"] = ucfirst($this->kana2romaji($this->stations[$name]["name"]["ja_hrgn"]));
+    $this->stations[$name]["geo"] = $this->setGeo($id);
+    $this->stations[$name]["company"] = (string) $station->aco;
+    $this->stations[$name]["line"] = (string) $station->rnm;
   }
-
 }
 
 // 緯度・経度をリンクしている別箇所から引っ張ってくる
-function setGeo(){
-
-  $geo =  "/ksj:Dataset/gml:Curve/gml:segments/gml:LineStringSegment/gml:posList";
-
-  // 場所を追加
-  $id = 1;
-  foreach ($this->xml->xpath($geo) as $sta){
-    $g = $sta;
-    $g = (string) $g;
-    $g = trim($g);
-    $g = preg_replace("/\n\s+/", " ", $g);
-    $g = split(" ", $g);
-    $this->stations[$id]["geo"] = $g;
-    $this->stations[$id]["center"] = $this->estimatesCenter($g);
-    $id++;
-  }
-
+function setGeo($id){
+  $curve = $this->xml->xpath('/Dataset/Curve[@id="cv'.$id.'"]');
+  $geos  = $curve[0]->segments->LineStringSegment->posList;
+  $geos  = (string) $geos;
+  $geos  = trim($geos);
+  $geos  = preg_replace("/\n\s+/", " ", $geos);
+  $geos  = split(" ", $geos);
+  $geo   = $this->estimatesCenter($geos);
+  $out   = array("lat" => $geo[0], "lng" => $geo[1]);
+  return $out;
 }
 
 // 複数個の緯度・経度の存在を考慮して、その中心点となる緯度・経度を推定する
@@ -111,38 +89,214 @@ function kanji2kana($str){
   return $yomi;
 }
 
-// XMLを書き出す
+// ひらがなをローマ字に変換する
+function kana2romaji($str){
+  $str = mb_convert_kana($str, 'cHV', 'utf-8');
+
+  $kana = array(
+      'きゃ', 'きぃ', 'きゅ', 'きぇ', 'きょ',
+      'ぎゃ', 'ぎぃ', 'ぎゅ', 'ぎぇ', 'ぎょ',
+      'くぁ', 'くぃ', 'くぅ', 'くぇ', 'くぉ',
+      'ぐぁ', 'ぐぃ', 'ぐぅ', 'ぐぇ', 'ぐぉ',
+      'しゃ', 'しぃ', 'しゅ', 'しぇ', 'しょ',
+      'じゃ', 'じぃ', 'じゅ', 'じぇ', 'じょ',
+      'ちゃ', 'ちぃ', 'ちゅ', 'ちぇ', 'ちょ',
+      'ぢゃ', 'ぢぃ', 'ぢゅ', 'ぢぇ', 'ぢょ',
+      'つぁ', 'つぃ', 'つぇ', 'つぉ',
+      'てゃ', 'てぃ', 'てゅ', 'てぇ', 'てょ',
+      'でゃ', 'でぃ', 'でぅ', 'でぇ', 'でょ',
+      'とぁ', 'とぃ', 'とぅ', 'とぇ', 'とぉ',
+      'にゃ', 'にぃ', 'にゅ', 'にぇ', 'にょ',
+      'ヴぁ', 'ヴぃ', 'ヴぇ', 'ヴぉ',
+      'ひゃ', 'ひぃ', 'ひゅ', 'ひぇ', 'ひょ',
+      'ふぁ', 'ふぃ', 'ふぇ', 'ふぉ',
+      'ふゃ', 'ふゅ', 'ふょ',
+      'びゃ', 'びぃ', 'びゅ', 'びぇ', 'びょ',
+      'ヴゃ', 'ヴぃ', 'ヴゅ', 'ヴぇ', 'ヴょ',  
+      'ぴゃ', 'ぴぃ', 'ぴゅ', 'ぴぇ', 'ぴょ',
+      'みゃ', 'みぃ', 'みゅ', 'みぇ', 'みょ',  
+      'りゃ', 'りぃ', 'りゅ', 'りぇ', 'りょ',
+      'うぃ', 'うぇ', 'いぇ'
+  );
+   
+  $romaji  = array(
+      'kya', 'kyi', 'kyu', 'kye', 'kyo',
+      'gya', 'gyi', 'gyu', 'gye', 'gyo',
+      'qwa', 'qwi', 'qwu', 'qwe', 'qwo',
+      'gwa', 'gwi', 'gwu', 'gwe', 'gwo',
+      'sya', 'syi', 'syu', 'sye', 'syo',
+      'ja', 'jyi', 'ju', 'je', 'jo',
+      'cha', 'cyi', 'chu', 'che', 'cho',
+      'dya', 'dyi', 'dyu', 'dye', 'dyo',
+      'tsa', 'tsi', 'tse', 'tso',
+      'tha', 'ti', 'thu', 'the', 'tho',
+      'dha', 'di', 'dhu', 'dhe', 'dho',
+      'twa', 'twi', 'twu', 'twe', 'two',
+      'nya', 'nyi', 'nyu', 'nye', 'nyo',
+      'va', 'vi', 've', 'vo',
+      'hya', 'hyi', 'hyu', 'hye', 'hyo',
+      'fa', 'fi', 'fe', 'fo',
+      'fya', 'fyu', 'fyo',
+      'bya', 'byi', 'byu', 'bye', 'byo',
+      'vya', 'vyi', 'vyu', 'vye', 'vyo',
+      'pya', 'pyi', 'pyu', 'pye', 'pyo',
+      'mya', 'myi', 'myu', 'mye', 'myo',
+      'rya', 'ryi', 'ryu', 'rye', 'ryo',
+      'wi', 'we', 'ye'
+  );
+   
+  $str = $this->kana_replace($str, $kana, $romaji);
+
+  $kana = array(
+      'あ', 'い', 'う', 'え', 'お',
+      'か', 'き', 'く', 'け', 'こ',
+      'さ', 'し', 'す', 'せ', 'そ',
+      'た', 'ち', 'つ', 'て', 'と',
+      'な', 'に', 'ぬ', 'ね', 'の',
+      'は', 'ひ', 'ふ', 'へ', 'ほ',
+      'ま', 'み', 'む', 'め', 'も',
+      'や', 'ゆ', 'よ',
+      'ら', 'り', 'る', 'れ', 'ろ',
+      'わ', 'ゐ', 'ゑ', 'を', 'ん',
+      'が', 'ぎ', 'ぐ', 'げ', 'ご',
+      'ざ', 'じ', 'ず', 'ぜ', 'ぞ',
+      'だ', 'ぢ', 'づ', 'で', 'ど',
+      'ば', 'び', 'ぶ', 'べ', 'ぼ',
+      'ぱ', 'ぴ', 'ぷ', 'ぺ', 'ぽ'
+  );
+   
+  $romaji = array(
+      'a', 'i', 'u', 'e', 'o',
+      'ka', 'ki', 'ku', 'ke', 'ko',
+      'sa', 'shi', 'su', 'se', 'so',
+      'ta', 'chi', 'tsu', 'te', 'to',
+      'na', 'ni', 'nu', 'ne', 'no',
+      'ha', 'hi', 'fu', 'he', 'ho',
+      'ma', 'mi', 'mu', 'me', 'mo',
+      'ya', 'yu', 'yo',
+      'ra', 'ri', 'ru', 're', 'ro',
+      'wa', 'wyi', 'wye', 'wo', 'n',
+      'ga', 'gi', 'gu', 'ge', 'go',
+      'za', 'ji', 'zu', 'ze', 'zo',
+      'da', 'ji', 'du', 'de', 'do',
+      'ba', 'bi', 'bu', 'be', 'bo',
+      'pa', 'pi', 'pu', 'pe', 'po'
+  );
+   
+  $str = $this->kana_replace($str, $kana, $romaji);
+   
+  $str = preg_replace('/(っ$|っ[^a-z])/u', "xtu", $str);
+  $res = preg_match_all('/(っ)(.)/u', $str, $matches);
+  if(!empty($res)){
+      for($i=0;isset($matches[0][$i]);$i++){
+          if($matches[0][$i] == 'っc') $matches[2][$i] = 't';
+          $str = preg_replace('/' . $matches[1][$i] . '/u', $matches[2][$i], $str, 1);
+      }
+  }
+   
+  $kana = array(
+      'ぁ', 'ぃ', 'ぅ', 'ぇ', 'ぉ',
+      'ヵ', 'ヶ', 'っ', 'ゃ', 'ゅ', 'ょ', 'ゎ', '、', '。', '　'
+  );
+   
+  $romaji = array(
+      'a', 'i', 'u', 'e', 'o',
+      'ka', 'ke', 'xtu', 'xya', 'xyu', 'xyo', 'xwa', ', ', '.', ' '
+  );
+  $str = $this->kana_replace($str, $kana, $romaji);
+   
+  $str = preg_replace('/^ー|[^a-z]ー/u', '', $str);
+  $res = preg_match_all('/(.)(ー)/u', $str, $matches);
+
+  if($res){
+      for($i=0;isset($matches[0][$i]);$i++){
+          if( $matches[1][$i] == "a" ){ $replace = 'â'; }
+          else if( $matches[1][$i] == "i" ){ $replace = 'î'; }
+          else if( $matches[1][$i] == "u" ){ $replace = 'û'; }
+          else if( $matches[1][$i] == "e" ){ $replace = 'ê'; }
+          else if( $matches[1][$i] == "o" ){ $replace = 'ô'; }
+          else { $replace = ""; }
+           
+          $str = preg_replace('/' . $matches[0][$i] . '/u', $replace, $str, 1);
+      }
+  }
+   
+  return $str;
+}
+
+function kana_replace($str, $kana, $romaji){
+  $patterns = array();
+  foreach($kana as $value){
+      $patterns[] = '/' . $value . '/';
+  }
+   
+  $str = preg_replace($patterns, $romaji, $str);
+  return $str;
+}
+
+function postProcess(){
+  foreach ($this->stations as $name => $station){
+    if ($name == "弘明寺" && $station["company"] == "京浜急行電鉄"){
+      $this->stations[$name]["name"]["ja"] = "弘明寺（京急）";
+    }
+    if ($name == "弘明寺" && $station["company"] == "横浜市"){
+      $this->stations[$name]["name"]["ja"] = "弘明寺（横浜市営）";
+    }
+    if ($name == "浅草" && $station["company"] == "首都圏新都市鉄道"){
+      $this->stations[$name]["name"]["ja"] = "浅草（TX）";
+    }
+  }
+}
+
+// JSONを書き出す
 function write(){
-  $fp = fopen("./stations.serialized", "w");
-  $file = serialize($this->stations);
-  fwrite($fp, $file);
-  fclose($fp);
+  $json = json_encode($this->stations);
+  $fp = fopen("stations.json", "w");
+  if ($fp){
+    fwrite($fp, $json);
+    fclose($fp);
+  }
 }
 
-function load(){
-  $file = file_get_contents("stations.serialized");
-  $stations = unserialize($file);
-  echo "<pre>";
+function loadAll(){
+  $stations = file_get_contents("stations.json");
+  header("content-type: application/json");
   print_r($stations);
-  echo "</pre>";
 }
 
-function calc(){
+function loadYomi(){
+  $file = file_get_contents("stations.json");
+  $stations = json_decode($file);
+  $out = "";
+
+  foreach ($stations as $name => $station){
+    $out .= '"'.$name.'": {'.
+            '"hrgn": "'. $station->name->ja_hrgn .'",'.
+            '"en": "'. $station->name->en .'"'.
+            '},';
+  }
+
+  $out = '{'.substr($out, 0, -1).'}';
+  header("content-type: application/json; encoding: utf-8");
+  echo $out;
+}
+
+function near(){
 
   if (!isset($_GET["x"]) || !isset($_GET["y"])) exit("No position specified.");
   if (!preg_match("/^[0-9\.]+$/", $_GET["x"]))  exit("invalid X");
   if (!preg_match("/^[0-9\.]+$/", $_GET["y"]))  exit("invalid Y");
 
-  $file = file_get_contents("stations.serialized");
-  $stations = unserialize($file);
+  $file = file_get_contents("stations.json");
+  $stations = json_decode($file);
   $x = (float) $_GET["x"];
   $y = (float) $_GET["y"];
   $i = 0;
 
   // 線形探索による最近傍駅探索、要するに総当り・・
   foreach ($stations as $id => $station){
-    $vx = $x - (float) $station["center"][0];
-    $vy = $y - (float) $station["center"][1];
+    $vx = $x - (float) $station->geo->lat;
+    $vy = $y - (float) $station->geo->lng;
     $d[$i]["id"] = $id;
     $d[$i]["distance"] = sqrt(pow($vx,2) + pow($vy,2)); // 三平方での距離算出
     $t[$i] = $d[$i]["distance"];
@@ -150,25 +304,10 @@ function calc(){
   }
 
   array_multisort($t, SORT_NUMERIC, $d);
-  //print_r($d);
   
   // 再近傍駅のID
-  $nearest_id = $d[0]["id"];
-  $nearest = array(
-    "name" => $stations[$nearest_id]["name"],
-    "company" => $stations[$nearest_id]["company"],
-    "line" => $stations[$nearest_id]["line"],
-    "yomi" => $stations[$nearest_id]["Yomi"]
-  );
-
-  $nearest["name"] = str_replace("･", "・", $nearest["name"]);
-  $nearest["yomi"] = str_replace("曳舟", "ひきふね", $nearest["yomi"]);
-  if ($nearest["name"] == "弘明寺" && $nearest["company"] == "京浜急行電鉄") $nearest["name"] = "弘明寺（京急）";
-  if ($nearest["name"] == "弘明寺" && $nearest["company"] == "横浜市") $nearest["name"] = "弘明寺（横浜市営）";
-  if ($nearest["name"] == "浅草" && $nearest["company"] == "首都圏新都市鉄道") $nearest["name"] = "浅草（TX）";
-
-  echo $nearest["name"];
-
+  $name = $d[0]["id"];
+  echo $stations->{$name}->name->ja;
 }
 
 }

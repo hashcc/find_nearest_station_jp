@@ -5,9 +5,11 @@ require "model.php";
 $generator = new TrainDataIO();
 
 switch ($_GET["mode"]){
-  case "load": $generator->load(); break;
-  case "near": $generator->calc(); break;
-  case "build": $generator->buildData(); break;
+  case "load":  $generator->loadAll(); break;
+  case "yomi":  $generator->loadYomi(); break;
+  case "near":  $generator->near(); break;
+  case "build": echo "残念、サーバ側ではこのコマンドは停止しているのです";
+                $generator->buildData(); break;
 }
 
 ?>
